@@ -59,7 +59,14 @@ EDGE_TTS_BIN = find_binary("edge-tts")
 PYTHON_BIN = sys.executable
 
 def get_ytdlp_cmd():
-    cmd = ["yt-dlp"]
+    ytdlp = find_binary("yt-dlp")
+    cmd = [ytdlp, "--remote-components", "ejs:github"]
+    deno_bin = shutil.which("deno")
+    node_bin = shutil.which("node")
+    if deno_bin:
+        cmd.extend(["--js-runtimes", f"deno:{deno_bin}"])
+    elif node_bin:
+        cmd.extend(["--js-runtimes", f"node:{node_bin}"])
     if COOKIES_FILE.exists():
         cmd.extend(["--cookies", str(COOKIES_FILE)])
     return cmd
