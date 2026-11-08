@@ -1,0 +1,49 @@
+================================================================================
+KOSZYK MATERIAŁÓW - KANAŁ POLSKI (ŚWIAT MILITARNY)
+================================================================================
+
+1. NOME DO CANAL:
+Świat Militarny
+(Opção alternativa: Militarny Raport)
+
+2. HANDLE DO YOUTUBE:
+@SwiatMilitarny (ou @SwiatMilitarnyOficjalny)
+
+3. DESCRIÇÃO DO CANAL (BIO):
+--------------------------------------------------------------------------------
+Świat Militarny to Twój codzienny raport o geopolityce, konfliktach zbrojnych, nowoczesnej technologii wojskowej i strategii obronnej NATO. 
+
+Analizujemy najnowsze wydarzenia na świecie, ruchy wojsk, czołgi, myśliwce, okręty oraz systemy rakietowe, które decydują o równowadze sił w Europie i na świecie. 
+
+Codzienna dawka wiedzy twardej: analizy taktyczne, ocena sprzętu wojskowego i kulisy decyzji mocarstw.
+
+🎯 Nowe analizy i raporty militarne codziennie.
+🔔 Subskrybuj, aby być na bieżąco z sytuacją geopolityczną!
+--------------------------------------------------------------------------------
+
+4. PALAVRAS-CHAVE / TAGS DO CANAL (Cole nas configurações do canal):
+wojsko, militaria, geopolityka, nato, czołgi, broń, wojna, armia, myśliwce, wojsko polskie, obronność, strategia wojskowa, raport militarny, konflikt, technika wojskowa, f-35, abrams, k2
+
+================================================================================
+CONFIGURAÇÕES OBRIGATÓRIAS NO YOUTUBE STUDIO PRA ENTREGAR NA POLÔNIA:
+================================================================================
+
+1. PAÍS DE RESIDÊNCIA (CRUCIAL):
+   - Vá em YouTube Studio -> Configurações (ícone de engrenagem)
+   - Aba "Canal" -> "Informações básicas"
+   - Campo "País de residência": selecione POLÔNIA (Poland).
+
+2. IDIOMA PADRÃO DOS ENVIOS:
+   - Vá em Configurações -> "Padrões de envio" (Upload defaults)
+   - Aba "Configurações avançadas"
+   - "Idioma do vídeo": POLONÊS (Polish)
+   - "Idioma do título e da descrição": POLONÊS (Polish)
+
+3. HORÁRIO ESTRATÉGICO DE POSTAGEM (FUSO CET / POLÔNIA):
+   - A Polônia está no fuso UTC+1 (cerca de 4 a 5 horas à frente do Brasil).
+   - O pico de audiência na Polônia é entre 17:00 e 21:00 (horário polonês).
+   - Horário no Brasil para publicar/agendar: entre 12:00 e 16:00 (horário de Brasília).
+
+4. METADADOS E LEGENDA:
+   - Nunca coloque títulos ou tags em português ou inglês no vídeo final.
+   - O algoritmo do YouTube lê o áudio (transcrição automática do robô do YouTube) + metadados. Como áudio e texto estarão 100% em polonês nativo, o sistema distribui automaticamente para usuários da Polônia e falantes de polonês.

@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Work directories & media artifacts
+workspace/
+*.mp4
+*.mp3
+*.wav
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.log
+
+# Sensitive Google OAuth credentials (injected via GitHub Secrets)
+client_secrets.json
+token.json
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

@@ -1,0 +1,65 @@
+name: Swiat Militarny 24/7 Autonomous Pipeline
+
+on:
+  schedule:
+    # Executa a cada 30 minutos
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    # Permite disparo manual pelo painel ou via gh CLI
+
+concurrency:
+  group: swiat-militarny-pipeline
+  cancel-in-progress: false
+
+jobs:
+  check-and-process:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install System Dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Inject OAuth Credentials
+        env:
+          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
+          CLIENT_SECRETS_JSON: ${{ secrets.CLIENT_SECRETS_JSON }}
+        run: |
+          echo "$TOKEN_JSON" > token.json
+          echo "$CLIENT_SECRETS_JSON" > client_secrets.json
+          chmod 600 token.json client_secrets.json
+
+      - name: Run Pipeline (Check, Process, Synthesize & Upload)
+        run: |
+          python run_once.py
+
+      - name: Commit and Push Updated Processed IDs
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add processed_ids.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update processed_ids.json [skip ci]"
+            git push
+          else
+            echo "Nenhuma alteração em processed_ids.json."
+          fi
