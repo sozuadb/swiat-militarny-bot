@@ -35,6 +35,7 @@ WORKSPACE_DIR = BASE_DIR / "workspace"
 PROCESSED_FILE = BASE_DIR / "processed_ids.json"
 UPLOAD_SCRIPT = BASE_DIR / "upload.py"
 TOKEN_FILE = BASE_DIR / "token.json"
+COOKIES_FILE = BASE_DIR / "cookies.txt"
 
 TARGET_CHANNEL = "https://www.youtube.com/@hojenomundomilitar/videos"
 
@@ -56,6 +57,12 @@ def find_binary(name):
 
 EDGE_TTS_BIN = find_binary("edge-tts")
 PYTHON_BIN = sys.executable
+
+def get_ytdlp_cmd():
+    cmd = ["yt-dlp"]
+    if COOKIES_FILE.exists():
+        cmd.extend(["--cookies", str(COOKIES_FILE)])
+    return cmd
 
 def run_cmd(cmd, check=True):
     cmd_str = ' '.join(cmd) if isinstance(cmd, list) else cmd
@@ -83,7 +90,7 @@ def save_processed_id(video_id):
     logging.info(f"[+] ID {video_id} salvo com sucesso em {PROCESSED_FILE}")
 
 def get_latest_channel_video_ids(limit=5):
-    cmd = ["yt-dlp", "--flat-playlist", "--playlist-end", str(limit), "--print", "%(id)s", TARGET_CHANNEL]
+    cmd = get_ytdlp_cmd() + ["--flat-playlist", "--playlist-end", str(limit), "--print", "%(id)s", TARGET_CHANNEL]
     res = run_cmd(cmd, check=False)
     if res.returncode != 0:
         logging.warning("Falha ao checar canal com yt-dlp")
@@ -143,20 +150,21 @@ def process_video(video_id):
         
         # 1. Download do vídeo e thumbnail
         logging.info(f"Baixando mídia de {url}...")
-        run_cmd([
-            "yt-dlp",
+        dl_cmd = get_ytdlp_cmd() + [
             "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]",
             "--merge-output-format", "mp4",
             "--write-thumbnail", "--convert-thumbnails", "jpg",
             "--output", str(work_dir / "original_video.%(ext)s"),
             url
-        ])
+        ]
+        run_cmd(dl_cmd)
 
         orig_video = work_dir / "original_video.mp4"
         orig_thumb = work_dir / "original_video.jpg"
 
         # 2. Obter título original
-        meta_res = run_cmd(["yt-dlp", "--print", "%(title)s", url], check=False)
+        meta_cmd = get_ytdlp_cmd() + ["--print", "%(title)s", url]
+        meta_res = run_cmd(meta_cmd, check=False)
         orig_title = meta_res.stdout.strip() if meta_res.returncode == 0 else "Raport Wojskowy"
 
         # 3. Transcrição

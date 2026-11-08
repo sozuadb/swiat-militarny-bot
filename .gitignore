@@ -17,6 +17,7 @@ workspace/
 # Sensitive Google OAuth credentials (injected via GitHub Secrets)
 client_secrets.json
 token.json
+cookies.txt
 .env
 
 # Python cache
