@@ -189,15 +189,29 @@ def process_video(video_id):
             sponsor_end = transcript[end_idx]["start"] + transcript[end_idx]["duration"]
             logging.info(f"Patrocinador detectado entre {sponsor_start:.2f}s e {sponsor_end:.2f}s")
 
-        # 5. Corte de Vinheta (primeiros 3 segundos) + Patrocinador se houver
+        # 5. Corte de Vinheta (primeiros 3 segundos exatos) + Patrocinador se houver
         clean_video = work_dir / "clean_video.mp4"
         if sponsor_start and sponsor_end and sponsor_start > 3.0:
             p1 = work_dir / "temp_p1.mp4"
             p2 = work_dir / "temp_p2.mp4"
             concat_txt = work_dir / "temp_concat.txt"
 
-            run_cmd(["ffmpeg", "-y", "-ss", "00:00:03.00", "-to", str(sponsor_start), "-i", str(orig_video), "-c", "copy", str(p1)])
-            run_cmd(["ffmpeg", "-y", "-ss", str(sponsor_end), "-i", str(orig_video), "-c", "copy", str(p2)])
+            # Re-encoding garante corte exato no frame sem herdar keyframe anterior do logo
+            run_cmd([
+                "ffmpeg", "-y",
+                "-i", str(orig_video),
+                "-ss", "00:00:03.00",
+                "-to", str(sponsor_start),
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-an", str(p1)
+            ])
+            run_cmd([
+                "ffmpeg", "-y",
+                "-i", str(orig_video),
+                "-ss", str(sponsor_end),
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-an", str(p2)
+            ])
             with open(concat_txt, "w") as f:
                 f.write(f"file '{p1}'\nfile '{p2}'\n")
             run_cmd(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_txt), "-c", "copy", str(clean_video)])
@@ -205,7 +219,13 @@ def process_video(video_id):
                 if f_rem.exists():
                     f_rem.unlink()
         else:
-            run_cmd(["ffmpeg", "-y", "-ss", "00:00:03.00", "-i", str(orig_video), "-c", "copy", str(clean_video)])
+            run_cmd([
+                "ffmpeg", "-y",
+                "-i", str(orig_video),
+                "-ss", "00:00:03.00",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-an", str(clean_video)
+            ])
 
         # 6. Adaptação do Roteiro para Polonês
         logging.info("Adaptando roteiro para o polonês...")
