@@ -267,12 +267,15 @@ def process_video(video_id):
 
         # 9. Título e Metadados
         logging.info("Traduzindo título e metadados para polonês...")
-        title_translator = MyMemoryTranslator(source="pt-BR", target="pl-PL")
-        try:
-            clean_title_pt = re.sub(r"hoje no mundo militar", "Świat Militarny", orig_title, flags=re.IGNORECASE)
-            title_pl = title_translator.translate(clean_title_pt)
-        except Exception:
-            title_pl = orig_title
+        clean_title_pt = re.sub(r"hoje no mundo militar", "Świat Militarny", orig_title, flags=re.IGNORECASE)
+        title_pl = translate_to_polish(clean_title_pt)
+        if not title_pl or title_pl == clean_title_pt:
+            try:
+                title_translator = MyMemoryTranslator(source="pt-BR", target="pl-PL", email="swiatmilitarny@gmail.com")
+                title_pl = title_translator.translate(clean_title_pt)
+            except Exception as e:
+                logging.error(f"Erro ao traduzir título: {e}")
+                title_pl = title_pl or clean_title_pt
 
         desc_pl = (
             f"{title_pl}\n\n"
