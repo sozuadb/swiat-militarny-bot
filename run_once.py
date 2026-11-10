@@ -339,7 +339,22 @@ def process_video(video_id):
         published_url = match.group(0) if match else "URL não capturada"
         logging.info(f"[+] SUCESSO! Vídeo publicado: {published_url}")
 
-        # 11. Salvar ID no histórico permanente
+        # 11. Geração e Publicação Automática de YouTube Short (9:16)
+        try:
+            from generate_short import create_short_pipeline
+            short_url = create_short_pipeline(
+                clean_video_path=clean_video,
+                title_pl=title_pl,
+                polish_body=polish_body,
+                work_dir=work_dir / "short_gen",
+                published_url=published_url,
+                video_id=video_id
+            )
+            logging.info(f"[+] SUCESSO! Short publicado: {short_url}")
+        except Exception as e:
+            logging.error(f"[!] Falha ao gerar/publicar Short (vídeo principal preservado): {e}")
+
+        # 12. Salvar ID no histórico permanente
         save_processed_id(video_id)
 
     finally:
