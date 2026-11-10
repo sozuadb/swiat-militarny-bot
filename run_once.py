@@ -105,6 +105,48 @@ def get_latest_channel_video_ids(limit=5):
     ids = [line.strip() for line in res.stdout.strip().split("\n") if line.strip()]
     return ids
 
+def fetch_transcript(video_id, work_dir):
+    """
+    Obtém a transcrição em português com fallback entre yt-dlp (autenticado) e YouTubeTranscriptApi.
+    """
+    sub_prefix = work_dir / "subtitles"
+    cmd = get_ytdlp_cmd() + [
+        "--write-auto-subs", "--write-subs",
+        "--sub-format", "json3",
+        "--sub-lang", "pt,pt-BR",
+        "--skip-download",
+        "-o", f"{sub_prefix}.%(ext)s",
+        f"https://www.youtube.com/watch?v={video_id}"
+    ]
+    try:
+        run_cmd(cmd, check=False)
+        for cand in [work_dir / "subtitles.pt.json3", work_dir / "subtitles.pt-BR.json3"]:
+            if cand.exists():
+                with open(cand, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                items = []
+                for ev in data.get("events", []):
+                    start = ev.get("tStartMs", 0) / 1000.0
+                    duration = ev.get("dDurationMs", 0) / 1000.0
+                    text = "".join([s.get("utf8", "") for s in ev.get("segs", [])]).strip()
+                    if text and text != "\n":
+                        items.append({"start": start, "duration": duration, "text": text})
+                if items:
+                    logging.info(f"Transcrição obtida com sucesso via yt-dlp json3 ({len(items)} blocos)")
+                    return items
+    except Exception as e:
+        logging.warning(f"yt-dlp subtitle download falhou: {e}")
+
+    try:
+        logging.info("Tentando YouTubeTranscriptApi como fallback...")
+        raw_trans = YouTubeTranscriptApi().fetch(video_id, languages=['pt', 'pt-BR'])
+        return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
+    except Exception as e:
+        logging.warning(f"Transcrição em PT direta indisponível: {e}. Listando faixas...")
+        trans_list = YouTubeTranscriptApi().list(video_id)
+        raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'en']).fetch()
+        return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
+
 def translate_to_polish(text):
     translator = MyMemoryTranslator(source="pt-BR", target="pl-PL", email="swiatmilitarny@gmail.com")
     raw_sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
@@ -175,15 +217,8 @@ def process_video(video_id):
         orig_title = meta_res.stdout.strip() if meta_res.returncode == 0 else "Raport Wojskowy"
 
         # 3. Transcrição
-        logging.info("Buscando transcrição via YouTubeTranscriptApi...")
-        try:
-            raw_trans = YouTubeTranscriptApi().fetch(video_id, languages=['pt', 'pt-BR'])
-        except Exception as e:
-            logging.warning(f"Transcrição em PT direta indisponível: {e}. Listando faixas...")
-            trans_list = YouTubeTranscriptApi().list(video_id)
-            raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'en']).fetch()
-
-        transcript = [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
+        logging.info("Buscando transcrição...")
+        transcript = fetch_transcript(video_id, work_dir)
         with open(work_dir / "transcript.json", "w", encoding="utf-8") as f:
             json.dump(transcript, f, indent=2, ensure_ascii=False)
 
