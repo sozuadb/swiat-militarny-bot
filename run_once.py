@@ -147,44 +147,76 @@ def fetch_transcript(video_id, work_dir):
         raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'en']).fetch()
         return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
 
+def split_into_safe_chunks(text, max_chars=380):
+    raw_units = re.split(r"(?<=[.!?,;:])\s+", text)
+    units = []
+    for u in raw_units:
+        u = u.strip()
+        if not u:
+            continue
+        if len(u) > max_chars:
+            words = u.split()
+            cur = []
+            cur_l = 0
+            for w in words:
+                if cur_l + len(w) + 1 > max_chars and cur:
+                    units.append(" ".join(cur))
+                    cur = [w]
+                    cur_l = len(w)
+                else:
+                    cur.append(w)
+                    cur_l += len(w) + 1
+            if cur:
+                units.append(" ".join(cur))
+        else:
+            units.append(u)
+
+    chunks = []
+    cur_chunk = []
+    cur_len = 0
+    for u in units:
+        if cur_len + len(u) + 1 > max_chars and cur_chunk:
+            chunks.append(" ".join(cur_chunk))
+            cur_chunk = [u]
+            cur_len = len(u)
+        else:
+            cur_chunk.append(u)
+            cur_len += len(u) + 1
+    if cur_chunk:
+        chunks.append(" ".join(cur_chunk))
+    return chunks
+
 def translate_to_polish(text):
     translator = MyMemoryTranslator(source="pt-BR", target="pl-PL", email="swiatmilitarny@gmail.com")
-    raw_sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
-    
-    # Agrupar frases em blocos de até 450 caracteres para reduzir número de requisições HTTP
-    chunks = []
-    current_chunk = []
-    current_len = 0
-    for s in raw_sentences:
-        if len(s) < 3:
-            continue
-        if current_len + len(s) + 1 > 450 and current_chunk:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = [s]
-            current_len = len(s)
-        else:
-            current_chunk.append(s)
-            current_len += len(s) + 1
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
+    chunks = split_into_safe_chunks(text, max_chars=380)
 
     logging.info(f"Traduzindo {len(chunks)} blocos consolidados para polonês...")
     translated = []
     for i, c in enumerate(chunks):
         chunk_success = False
-        for attempt in range(3):
+        for attempt in range(4):
             try:
                 res = translator.translate(c)
-                if res:
+                if res and res != c:
                     translated.append(res)
                     chunk_success = True
                     break
             except Exception as e:
-                logging.warning(f"Tentativa {attempt+1} falhou para bloco {i+1}: {e}")
+                logging.warning(f"Tentativa {attempt+1} falhou para bloco {i+1} ({len(c)} chars): {e}")
                 time.sleep(1.0 * (attempt + 1))
         if not chunk_success:
-            logging.error(f"Falha definitiva ao traduzir bloco {i+1}. Mantendo original.")
-            translated.append(c)
+            # Fallback: divide o bloco ao meio
+            words = c.split()
+            mid = len(words) // 2
+            sub_c1, sub_c2 = " ".join(words[:mid]), " ".join(words[mid:])
+            try:
+                res1 = translator.translate(sub_c1) if sub_c1 else ""
+                res2 = translator.translate(sub_c2) if sub_c2 else ""
+                translated.append(f"{res1} {res2}".strip())
+                chunk_success = True
+            except Exception as e2:
+                logging.error(f"Falha definitiva ao traduzir bloco {i+1}: {e2}. Mantendo original.")
+                translated.append(c)
         time.sleep(0.4)
 
     return " ".join(translated)
