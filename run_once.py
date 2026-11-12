@@ -356,7 +356,47 @@ def process_video(video_id):
                     break
             except Exception as e:
                 logging.warning(f"Tentativa {attempt+1} de síntese de voz falhou: {e}. Aguardando...")
-                time.sleep(2.0 * (attempt + 1))
+                time.sleep(3.0 * (attempt + 1))
+
+        if not tts_ok:
+            logging.info("Tentando síntese particionada em blocos para evitar timeout do websocket...")
+            paragraphs = [p.strip() for p in script_pl.split("\n\n") if p.strip()]
+            part_files = []
+            for idx, p in enumerate(paragraphs):
+                p_file = work_dir / f"script_part_{idx:02d}.txt"
+                p_audio = work_dir / f"audio_part_{idx:02d}.mp3"
+                with open(p_file, "w", encoding="utf-8") as pf:
+                    pf.write(p)
+                p_ok = False
+                for p_att in range(3):
+                    try:
+                        run_cmd([
+                            EDGE_TTS_BIN,
+                            "--voice", "pl-PL-MarekNeural",
+                            "--rate=-12%",
+                            "--pitch=-4Hz",
+                            "-f", str(p_file),
+                            "--write-media", str(p_audio)
+                        ])
+                        if p_audio.exists() and p_audio.stat().st_size > 0:
+                            p_ok = True
+                            part_files.append(p_audio)
+                            break
+                    except Exception as pe:
+                        logging.warning(f"Tentativa {p_att+1} falhou para parte {idx}: {pe}")
+                        time.sleep(2.0 * (p_att + 1))
+                if not p_ok:
+                    raise RuntimeError(f"Falha definitiva ao sintetizar parte {idx}")
+                time.sleep(0.5)
+
+            concat_list = work_dir / "audio_concat.txt"
+            with open(concat_list, "w", encoding="utf-8") as cf:
+                for pf in part_files:
+                    cf.write(f"file '{pf.resolve()}'\n")
+            run_cmd(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(audio_file)])
+            if audio_file.exists() and audio_file.stat().st_size > 0:
+                tts_ok = True
+
         if not tts_ok:
             raise RuntimeError(f"Falha definitiva ao sintetizar áudio para o vídeo principal: {audio_file}")
 
