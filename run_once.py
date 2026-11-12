@@ -25,10 +25,12 @@ import re
 import shutil
 import subprocess
 import logging
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from youtube_transcript_api import YouTubeTranscriptApi
 from deep_translator import MyMemoryTranslator
+from edge_tts import Communicate
 
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE_DIR = BASE_DIR / "workspace"
@@ -57,6 +59,28 @@ def find_binary(name):
 
 EDGE_TTS_BIN = find_binary("edge-tts")
 PYTHON_BIN = sys.executable
+
+def synthesize_polish_speech(text, output_file, rate="-12%", pitch="-4Hz", voice="pl-PL-MarekNeural"):
+    async def _synth():
+        c = Communicate(
+            text=text,
+            voice=voice,
+            rate=rate,
+            pitch=pitch,
+            connect_timeout=60,
+            receive_timeout=180
+        )
+        await c.save(str(output_file))
+
+    for attempt in range(4):
+        try:
+            asyncio.run(_synth())
+            if Path(output_file).exists() and Path(output_file).stat().st_size > 0:
+                return True
+        except Exception as e:
+            logging.warning(f"Tentativa {attempt+1} de síntese de voz falhou: {e}. Aguardando...")
+            time.sleep(3.0 * (attempt + 1))
+    return False
 
 def get_ytdlp_cmd():
     ytdlp = find_binary("yt-dlp")
@@ -339,54 +363,18 @@ def process_video(video_id):
         # 7. Síntese de Voz Neural Marek
         audio_file = work_dir / "audio_pl.mp3"
         logging.info("Sintetizando locução neural polonesa Marek...")
-        tts_cmd = [
-            EDGE_TTS_BIN,
-            "--voice", "pl-PL-MarekNeural",
-            "--rate=-12%",
-            "--pitch=-4Hz",
-            "-f", str(script_file),
-            "--write-media", str(audio_file)
-        ]
-        tts_ok = False
-        for attempt in range(4):
-            try:
-                run_cmd(tts_cmd)
-                if audio_file.exists() and audio_file.stat().st_size > 0:
-                    tts_ok = True
-                    break
-            except Exception as e:
-                logging.warning(f"Tentativa {attempt+1} de síntese de voz falhou: {e}. Aguardando...")
-                time.sleep(3.0 * (attempt + 1))
+        tts_ok = synthesize_polish_speech(script_pl, audio_file, rate="-12%", pitch="-4Hz")
 
         if not tts_ok:
             logging.info("Tentando síntese particionada em blocos para evitar timeout do websocket...")
             paragraphs = [p.strip() for p in script_pl.split("\n\n") if p.strip()]
             part_files = []
             for idx, p in enumerate(paragraphs):
-                p_file = work_dir / f"script_part_{idx:02d}.txt"
                 p_audio = work_dir / f"audio_part_{idx:02d}.mp3"
-                with open(p_file, "w", encoding="utf-8") as pf:
-                    pf.write(p)
-                p_ok = False
-                for p_att in range(3):
-                    try:
-                        run_cmd([
-                            EDGE_TTS_BIN,
-                            "--voice", "pl-PL-MarekNeural",
-                            "--rate=-12%",
-                            "--pitch=-4Hz",
-                            "-f", str(p_file),
-                            "--write-media", str(p_audio)
-                        ])
-                        if p_audio.exists() and p_audio.stat().st_size > 0:
-                            p_ok = True
-                            part_files.append(p_audio)
-                            break
-                    except Exception as pe:
-                        logging.warning(f"Tentativa {p_att+1} falhou para parte {idx}: {pe}")
-                        time.sleep(2.0 * (p_att + 1))
+                p_ok = synthesize_polish_speech(p, p_audio, rate="-12%", pitch="-4Hz")
                 if not p_ok:
                     raise RuntimeError(f"Falha definitiva ao sintetizar parte {idx}")
+                part_files.append(p_audio)
                 time.sleep(0.5)
 
             concat_list = work_dir / "audio_concat.txt"
