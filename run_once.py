@@ -60,7 +60,11 @@ PYTHON_BIN = sys.executable
 
 def get_ytdlp_cmd():
     ytdlp = find_binary("yt-dlp")
-    cmd = [ytdlp, "--remote-components", "ejs:github"]
+    cmd = [
+        ytdlp,
+        "--remote-components", "ejs:github",
+        "--extractor-args", "youtube:player_client=tv,android,web"
+    ]
     deno_bin = shutil.which("deno")
     node_bin = shutil.which("node")
     if deno_bin:
