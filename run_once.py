@@ -339,14 +339,26 @@ def process_video(video_id):
         # 7. Síntese de Voz Neural Marek
         audio_file = work_dir / "audio_pl.mp3"
         logging.info("Sintetizando locução neural polonesa Marek...")
-        run_cmd([
+        tts_cmd = [
             EDGE_TTS_BIN,
             "--voice", "pl-PL-MarekNeural",
             "--rate=-12%",
             "--pitch=-4Hz",
             "-f", str(script_file),
             "--write-media", str(audio_file)
-        ])
+        ]
+        tts_ok = False
+        for attempt in range(4):
+            try:
+                run_cmd(tts_cmd)
+                if audio_file.exists() and audio_file.stat().st_size > 0:
+                    tts_ok = True
+                    break
+            except Exception as e:
+                logging.warning(f"Tentativa {attempt+1} de síntese de voz falhou: {e}. Aguardando...")
+                time.sleep(2.0 * (attempt + 1))
+        if not tts_ok:
+            raise RuntimeError(f"Falha definitiva ao sintetizar áudio para o vídeo principal: {audio_file}")
 
         # 8. Mux Final (0% áudio original, 100% locução polonesa com fade-out de 3s)
         probe = run_cmd([

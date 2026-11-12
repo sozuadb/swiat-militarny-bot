@@ -97,17 +97,29 @@ def create_short_pipeline(clean_video_path, title_pl, polish_body, work_dir, pub
     with open(script_file, "w", encoding="utf-8") as f:
         f.write(short_script)
 
-    # 2. Síntese de Voz Rápida para o Short (taxa +3% para dinamismo)
+    # 2. Síntese de Voz Rápida para o Short (taxa +3% para dinamismo) com retentativas
     audio_short = work_dir / "short_audio.mp3"
     logging.info("Sintetizando locução do Short...")
-    run_cmd([
+    tts_cmd = [
         EDGE_TTS_BIN,
         "--voice", "pl-PL-MarekNeural",
         "--rate=+3%",
         "--pitch=-2Hz",
         "-f", str(script_file),
         "--write-media", str(audio_short)
-    ])
+    ]
+    tts_success = False
+    for attempt in range(4):
+        try:
+            run_cmd(tts_cmd)
+            if audio_short.exists() and audio_short.stat().st_size > 0:
+                tts_success = True
+                break
+        except Exception as e:
+            logging.warning(f"Tentativa {attempt+1} de síntese do Short falhou: {e}. Aguardando...")
+            time.sleep(2.0 * (attempt + 1))
+    if not tts_success:
+        raise RuntimeError(f"Falha definitiva ao sintetizar áudio para o Short: {audio_short}")
 
     # 3. Duração da Locução
     probe = run_cmd([
