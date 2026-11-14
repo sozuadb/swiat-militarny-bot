@@ -430,6 +430,17 @@ def process_video(video_id):
         )
         tags_pl = "wojna, geopolityka, nato, rosja, ukraina, militaria, wojsko, świat militarny, obronność, konflikt"
 
+        # 9.1 Geração de Thumbnail Localizada em Polonês
+        thumb_to_upload = orig_thumb
+        localized_thumb = work_dir / "thumbnail_pl.jpg"
+        try:
+            from thumbnail_generator import generate_localized_thumbnail
+            if orig_thumb.exists() and generate_localized_thumbnail(orig_thumb, title_pl, localized_thumb):
+                thumb_to_upload = localized_thumb
+                logging.info(f"[+] Thumbnail localizada em polonês pronta: {thumb_to_upload}")
+        except Exception as e:
+            logging.warning(f"Falha ao gerar thumbnail localizada, usando original: {e}")
+
         # 10. Upload no YouTube via API
         logging.info("Enviando vídeo para o YouTube via API...")
         upload_cmd = [
@@ -441,8 +452,8 @@ def process_video(video_id):
             "--tags", tags_pl,
             "--privacy", "public"
         ]
-        if orig_thumb.exists():
-            upload_cmd.extend(["--thumb", str(orig_thumb)])
+        if thumb_to_upload.exists():
+            upload_cmd.extend(["--thumb", str(thumb_to_upload)])
 
         upload_res = run_cmd(upload_cmd, check=True)
 
