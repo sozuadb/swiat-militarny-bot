@@ -17,13 +17,8 @@ BASE_DIR = Path(__file__).resolve().parent
 TEMP_DIR = BASE_DIR / "temp_thumbs"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-# 6 vídeos pendentes de reset de cota do YouTube
+# 1 vídeo pendente de reset de cota do YouTube
 VIDEOS_PENDING = [
-    ("NnjsraLmdEs", "BJfOr1wzeGU", "Netanjahu może stracić władzę - jakie zmiany zachodzą na Bliskim Wschodzie i w wojnie z Iranem?"),
-    ("SbI9NE26cTo", "K0ELk5D-SVE", "Strategia zimowa Putina: „Sprawię, że ukraińskie miasta nie nadają się do zamieszkania!”"),
-    ("UiKrRc7YH5s", "b6iLE8RNGeY", "Eisenkot na miejscu Netanjahu? Lider opozycji wybrany do utworzenia rządu: Odprawa 8 listopada"),
-    ("nIKaAexJ87o", "SmIIWoVCS4M", "Rosja atakuje Europę – Wojna hybrydowa uderza w lotnictwo, sklepy i infrastrukturę"),
-    ("3PAvGmEqBB4", "CsSaiAQTwwA", "USA atakuje w cieśninie Ormuz – Rosyjska wojna hybrydowa paraliżuje Europę (Raport)"),
     ("sTB7BYPaisU", "NTmsCRGCzY0", "Japonia chce broni jądrowej? Koniec powojennego tabu w Tokio"),
 ]
 
