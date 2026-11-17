@@ -87,7 +87,7 @@ def get_ytdlp_cmd():
     cmd = [
         ytdlp,
         "--remote-components", "ejs:github",
-        "--extractor-args", "youtube:player_client=tv,android,web"
+        "--extractor-args", "youtube:player_client=android,ios,mweb,web"
     ]
     deno_bin = shutil.which("deno")
     node_bin = shutil.which("node")
@@ -123,6 +123,17 @@ def save_processed_id(video_id):
     with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
         json.dump(sorted(list(current)), f, indent=2, ensure_ascii=False)
     logging.info(f"[+] ID {video_id} salvo com sucesso em {PROCESSED_FILE}")
+
+    # Sincronização automática com GitHub para manter runner da nuvem ciente
+    try:
+        subprocess.run(["git", "add", "processed_ids.json", "processed_shorts.json"], cwd=BASE_DIR, capture_output=True)
+        commit_res = subprocess.run(["git", "commit", "-m", f"auto: registrar {video_id} [skip ci]"], cwd=BASE_DIR, capture_output=True)
+        if commit_res.returncode == 0:
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=BASE_DIR, capture_output=True)
+            subprocess.run(["git", "push", "origin", "main"], cwd=BASE_DIR, capture_output=True)
+            logging.info(f"[+] Sincronizado com GitHub remoto: {video_id}")
+    except Exception as e:
+        logging.warning(f"Aviso: falha no auto-git push: {e}")
 
 def get_latest_channel_video_ids(limit=5):
     cmd = get_ytdlp_cmd() + ["--flat-playlist", "--playlist-end", str(limit), "--print", "%(id)s", TARGET_CHANNEL]
