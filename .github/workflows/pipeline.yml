@@ -38,7 +38,8 @@ jobs:
       - name: Install System Dependencies (FFmpeg & Fonts)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-open-sans
+          sudo sh -c 'echo "63.188.89.133 api.mymemory.translated.net" >> /etc/hosts'
 
       - name: Install Python Dependencies
         run: |
@@ -70,7 +71,8 @@ jobs:
           git add processed_ids.json processed_shorts.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: update processed IDs and shorts [skip ci]"
-            git push
+            git pull --rebase origin main
+            git push origin main
           else
             echo "Nenhuma alteração em processed_ids.json ou processed_shorts.json."
           fi

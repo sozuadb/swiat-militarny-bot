@@ -10,19 +10,44 @@ import logging
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-# Fontes padrão
-FONT_EXTRA_BOLD = "/usr/share/fonts/TTF/OpenSans-ExtraBold.ttf"
-FONT_BOLD = "/usr/share/fonts/TTF/OpenSans-Bold.ttf"
-FALLBACK_FONT = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
+# Fontes padrão e caminhos multi-distro (Arch / Ubuntu / Debian)
+CANDIDATE_FONTS_EXTRA_BOLD = [
+    "/usr/share/fonts/TTF/OpenSans-ExtraBold.ttf",
+    "/usr/share/fonts/truetype/open-sans/OpenSans-ExtraBold.ttf",
+    "/usr/share/fonts/opentype/open-sans/OpenSans-ExtraBold.otf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+]
 
-def get_font(path, size):
-    for f in [path, FONT_EXTRA_BOLD, FONT_BOLD, FALLBACK_FONT]:
-        if os.path.exists(f):
+CANDIDATE_FONTS_BOLD = [
+    "/usr/share/fonts/TTF/OpenSans-Bold.ttf",
+    "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf",
+    "/usr/share/fonts/opentype/open-sans/OpenSans-Bold.otf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+]
+
+FONT_EXTRA_BOLD = CANDIDATE_FONTS_EXTRA_BOLD[0]
+FONT_BOLD = CANDIDATE_FONTS_BOLD[0]
+
+def get_font(font_type_or_path, size):
+    if font_type_or_path == FONT_BOLD:
+        search_list = CANDIDATE_FONTS_BOLD + CANDIDATE_FONTS_EXTRA_BOLD
+    else:
+        search_list = CANDIDATE_FONTS_EXTRA_BOLD + CANDIDATE_FONTS_BOLD
+
+    if font_type_or_path and font_type_or_path not in search_list:
+        search_list = [font_type_or_path] + search_list
+
+    for f in search_list:
+        if f and os.path.exists(f):
             try:
                 return ImageFont.truetype(f, size)
             except Exception:
                 pass
     return ImageFont.load_default()
+
+
 
 def parse_title_components(title_pl):
     """
