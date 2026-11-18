@@ -82,12 +82,22 @@ def synthesize_polish_speech(text, output_file, rate="-12%", pitch="-4Hz", voice
             time.sleep(3.0 * (attempt + 1))
     return False
 
-def get_ytdlp_cmd():
+def has_valid_auth_cookies(cookie_path):
+    if not cookie_path.exists():
+        return False
+    try:
+        txt = cookie_path.read_text(encoding="utf-8", errors="ignore")
+        return any(f"\t{k}\t" in txt for k in ("SID", "__Secure-1PSID", "__Secure-3PSID", "LOGIN_INFO"))
+    except Exception:
+        return False
+
+def get_ytdlp_cmd(use_cookies=True, clients="mweb,android_vr,ios,android,web"):
     ytdlp = find_binary("yt-dlp")
     cmd = [
         ytdlp,
         "--remote-components", "ejs:github",
-        "--extractor-args", "youtube:player_client=android,ios,mweb,web"
+        "--extractor-args", f"youtube:player_client={clients}",
+        "--extractor-args", "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416"
     ]
     deno_bin = shutil.which("deno")
     node_bin = shutil.which("node")
@@ -95,8 +105,12 @@ def get_ytdlp_cmd():
         cmd.extend(["--js-runtimes", f"deno:{deno_bin}"])
     elif node_bin:
         cmd.extend(["--js-runtimes", f"node:{node_bin}"])
-    if COOKIES_FILE.exists():
-        cmd.extend(["--cookies", str(COOKIES_FILE)])
+    if use_cookies and has_valid_auth_cookies(COOKIES_FILE):
+        # Copia para arquivo efêmero para evitar que yt-dlp sobrescreva/expire cookies.txt
+        tmp_cookies = WORKSPACE_DIR / "runtime_cookies.txt"
+        WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(COOKIES_FILE, tmp_cookies)
+        cmd.extend(["--cookies", str(tmp_cookies)])
     return cmd
 
 def run_cmd(cmd, check=True):
@@ -268,16 +282,33 @@ def process_video(video_id):
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
         
-        # 1. Download do vídeo e thumbnail
+        # 1. Download do vídeo e thumbnail (com fallback de perfis anti-datacenter)
         logging.info(f"Baixando mídia de {url}...")
-        dl_cmd = get_ytdlp_cmd() + [
-            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]",
+        dl_args = [
+            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
             "--merge-output-format", "mp4",
             "--write-thumbnail", "--convert-thumbnails", "jpg",
             "--output", str(work_dir / "original_video.%(ext)s"),
             url
         ]
-        run_cmd(dl_cmd)
+        profiles = [
+            (True, "mweb,android_vr,ios,android,web"),
+            (False, "android_vr,tv_embedded,ios,mweb"),
+            (False, "web_creator,tv,web_embedded"),
+        ]
+        dl_ok = False
+        last_err = None
+        for use_ck, cli_list in profiles:
+            try:
+                run_cmd(get_ytdlp_cmd(use_cookies=use_ck, clients=cli_list) + dl_args)
+                if (work_dir / "original_video.mp4").exists():
+                    dl_ok = True
+                    break
+            except Exception as e:
+                last_err = e
+                logging.warning(f"Perfil ({cli_list}, cookies={use_ck}) falhou, tentando próximo...")
+        if not dl_ok:
+            raise last_err or RuntimeError("Todos os perfis de download falharam.")
 
         orig_video = work_dir / "original_video.mp4"
         orig_thumb = work_dir / "original_video.jpg"
@@ -499,8 +530,48 @@ def process_video(video_id):
             except Exception as e:
                 logging.warning(f"Erro ao limpar workspace: {e}")
 
+def test_cloud_download(video_id):
+    logging.info(f"=== TESTE DE DOWNLOAD REAL EM NUVEM: {video_id} ===")
+    work_dir = WORKSPACE_DIR / f"test_{video_id}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        dl_args = [
+            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            "--merge-output-format", "mp4",
+            "--write-thumbnail", "--convert-thumbnails", "jpg",
+            "--output", str(work_dir / "original_video.%(ext)s"),
+            url
+        ]
+        profiles = [
+            (True, "mweb,android_vr,ios,android,web"),
+            (False, "android_vr,tv_embedded,ios,mweb"),
+            (False, "web_creator,tv,web_embedded"),
+        ]
+        dl_ok = False
+        for use_ck, cli_list in profiles:
+            try:
+                run_cmd(get_ytdlp_cmd(use_cookies=use_ck, clients=cli_list) + dl_args)
+                if (work_dir / "original_video.mp4").exists():
+                    size_mb = (work_dir / "original_video.mp4").stat().st_size / (1024 * 1024)
+                    logging.info(f"[+] SUCESSO DOWNLOAD MP4 ({size_mb:.2f} MB) com perfil ({cli_list}, cookies={use_ck})")
+                    dl_ok = True
+                    break
+            except Exception as e:
+                logging.warning(f"Perfil ({cli_list}, cookies={use_ck}) falhou: {e}")
+        if not dl_ok:
+            raise RuntimeError("Falha no teste de download de mídia em nuvem!")
+
+        transcript = fetch_transcript(video_id, work_dir)
+        logging.info(f"[+] SUCESSO TRANSCRIÇÃO EM NUVEM: {len(transcript)} blocos obtidos!")
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
 def main():
     logging.info("=== RUN-ONCE PIPELINE - SWIAT MILITARNY ===")
+    if len(sys.argv) >= 3 and sys.argv[1] == "--test-download":
+        test_cloud_download(sys.argv[2])
+        sys.exit(0)
     processed = load_processed_ids()
     latest_ids = get_latest_channel_video_ids(limit=5)
     logging.info(f"Últimos IDs detectados no canal: {latest_ids}")
