@@ -356,8 +356,8 @@ def download_video_resilient(url, work_dir):
         "--output", str(work_dir / "original_video.%(ext)s"),
         url
     ]
-    ip_modes = [["--force-ipv4"], ["--force-ipv6"]] if os.environ.get("YTDLP_PROXY") else [[]]
-    max_rounds = 4 if os.environ.get("YTDLP_PROXY") else 2
+    ip_modes = [[], ["--force-ipv4"]] if os.environ.get("YTDLP_PROXY") else [[]]
+    max_rounds = 8 if os.environ.get("YTDLP_PROXY") else 2
     last_err = None
     for rnd in range(max_rounds):
         for ip_flag in ip_modes:
