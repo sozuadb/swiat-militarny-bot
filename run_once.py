@@ -29,6 +29,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import GenericProxyConfig
 from deep_translator import MyMemoryTranslator
 from edge_tts import Communicate
 
@@ -96,7 +97,7 @@ def get_ytdlp_cmd(use_cookies=True, clients="mweb,android_vr,ios,android,web"):
     cmd = [
         ytdlp,
         "--remote-components", "ejs:github",
-        "--extractor-args", f"youtube:player_client={clients}",
+        "--extractor-args", f"youtube:player_client={clients};lang=pt",
         "--extractor-args", "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416"
     ]
     deno_bin = shutil.which("deno")
@@ -163,20 +164,24 @@ def get_latest_channel_video_ids(limit=5):
 
 def fetch_transcript(video_id, work_dir):
     """
-    Obtém a transcrição em português com fallback entre yt-dlp (autenticado) e YouTubeTranscriptApi.
+    Obtém a transcrição em português com fallback entre yt-dlp e YouTubeTranscriptApi (com suporte a WARP proxy).
     """
     sub_prefix = work_dir / "subtitles"
     cmd = get_ytdlp_cmd() + [
         "--write-auto-subs", "--write-subs",
         "--sub-format", "json3",
-        "--sub-lang", "pt,pt-BR",
+        "--sub-langs", "pt.*,pt,pt-BR",
         "--skip-download",
         "-o", f"{sub_prefix}.%(ext)s",
         f"https://www.youtube.com/watch?v={video_id}"
     ]
     try:
         run_cmd(cmd, check=False)
-        for cand in [work_dir / "subtitles.pt.json3", work_dir / "subtitles.pt-BR.json3"]:
+        cands = [work_dir / "subtitles.pt.json3", work_dir / "subtitles.pt-BR.json3", work_dir / "subtitles.pt-orig.json3"]
+        for extra in sorted(work_dir.glob("subtitles*.json3")):
+            if extra not in cands:
+                cands.append(extra)
+        for cand in cands:
             if cand.exists():
                 with open(cand, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -188,19 +193,23 @@ def fetch_transcript(video_id, work_dir):
                     if text and text != "\n":
                         items.append({"start": start, "duration": duration, "text": text})
                 if items:
-                    logging.info(f"Transcrição obtida com sucesso via yt-dlp json3 ({len(items)} blocos)")
+                    logging.info(f"Transcrição obtida com sucesso via yt-dlp json3 ({cand.name}: {len(items)} blocos)")
                     return items
     except Exception as e:
         logging.warning(f"yt-dlp subtitle download falhou: {e}")
 
+    ytdlp_proxy = os.environ.get("YTDLP_PROXY", "").strip()
+    proxy_cfg = GenericProxyConfig(http_url=ytdlp_proxy, https_url=ytdlp_proxy) if ytdlp_proxy else None
+    ytt_api = YouTubeTranscriptApi(proxy_config=proxy_cfg) if proxy_cfg else YouTubeTranscriptApi()
+
     try:
         logging.info("Tentando YouTubeTranscriptApi como fallback...")
-        raw_trans = YouTubeTranscriptApi().fetch(video_id, languages=['pt', 'pt-BR'])
+        raw_trans = ytt_api.fetch(video_id, languages=['pt', 'pt-BR', 'pt-orig'])
         return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
     except Exception as e:
         logging.warning(f"Transcrição em PT direta indisponível: {e}. Listando faixas...")
-        trans_list = YouTubeTranscriptApi().list(video_id)
-        raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'en']).fetch()
+        trans_list = ytt_api.list(video_id)
+        raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'pt-orig', 'en']).fetch()
         return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
 
 def split_into_safe_chunks(text, max_chars=380):
