@@ -164,10 +164,14 @@ def get_latest_channel_video_ids(limit=5):
 
 def fetch_transcript(video_id, work_dir):
     """
-    Obtém a transcrição em português com fallback entre yt-dlp e YouTubeTranscriptApi (com suporte a WARP proxy).
+    Obtém a transcrição em português com 3 camadas de redundância:
+    1. yt-dlp json3 (cliente web + impersonate chrome)
+    2. YouTubeTranscriptApi (via proxy WARP)
+    3. faster-whisper ASR local direto no original_video.mp4 (100% imune a bloqueio de IP)
     """
     sub_prefix = work_dir / "subtitles"
-    cmd = get_ytdlp_cmd() + [
+    cmd = get_ytdlp_cmd(clients="web,mweb") + [
+        "--impersonate", "chrome",
         "--write-auto-subs", "--write-subs",
         "--sub-format", "json3",
         "--sub-langs", "pt.*,pt,pt-BR",
@@ -207,10 +211,40 @@ def fetch_transcript(video_id, work_dir):
         raw_trans = ytt_api.fetch(video_id, languages=['pt', 'pt-BR', 'pt-orig'])
         return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
     except Exception as e:
-        logging.warning(f"Transcrição em PT direta indisponível: {e}. Listando faixas...")
-        trans_list = ytt_api.list(video_id)
-        raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'pt-orig', 'en']).fetch()
-        return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
+        logging.warning(f"YouTubeTranscriptApi direta indisponível ({type(e).__name__}). Tentando listagem...")
+        try:
+            trans_list = ytt_api.list(video_id)
+            raw_trans = trans_list.find_transcript(['pt', 'pt-BR', 'pt-orig', 'en']).fetch()
+            return [{'start': x.start, 'duration': x.duration, 'text': x.text} for x in raw_trans]
+        except Exception as e2:
+            logging.warning(f"API de legendas bloqueada no IP da nuvem ({type(e2).__name__}). Acionando faster-whisper local no áudio baixado...")
+
+    orig_video = work_dir / "original_video.mp4"
+    if not orig_video.exists():
+        raise RuntimeError(f"Áudio/vídeo {orig_video} não encontrado para transcrição offline.")
+
+    from faster_whisper import WhisperModel
+    wav_16k = work_dir / "asr_16k.wav"
+    run_cmd([
+        find_binary("ffmpeg"), "-y", "-i", str(orig_video),
+        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav_16k)
+    ])
+    model = WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+    segments, _ = model.transcribe(str(wav_16k), language="pt", vad_filter=True)
+    items = []
+    for seg in segments:
+        txt = seg.text.strip()
+        if txt:
+            items.append({
+                "start": round(float(seg.start), 3),
+                "duration": round(max(0.1, float(seg.end - seg.start)), 3),
+                "text": txt
+            })
+    wav_16k.unlink(missing_ok=True)
+    if not items:
+        raise RuntimeError("faster-whisper não retornou segmentos de fala.")
+    logging.info(f"[+] Transcrição offline via faster-whisper concluída ({len(items)} blocos)!")
+    return items
 
 def split_into_safe_chunks(text, max_chars=380):
     raw_units = re.split(r"(?<=[.!?,;:])\s+", text)
