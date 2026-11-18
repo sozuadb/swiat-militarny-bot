@@ -320,6 +320,60 @@ def translate_to_polish(text):
 
     return " ".join(translated)
 
+def rotate_warp_proxy():
+    """Rotaciona identidade do Cloudflare WARP caso um IP específico de saída seja bloqueado."""
+    warp_bin = shutil.which("warp-cli")
+    if not warp_bin or not os.environ.get("YTDLP_PROXY"):
+        return False
+    logging.info("Rotacionando identidade Cloudflare WARP para novo IP de saída...")
+    cmds = [
+        [warp_bin, "--accept-tos", "disconnect"],
+        [warp_bin, "--accept-tos", "registration", "delete"],
+        [warp_bin, "--accept-tos", "registration", "new"],
+        [warp_bin, "--accept-tos", "mode", "proxy"],
+        [warp_bin, "--accept-tos", "proxy", "port", "40000"],
+        [warp_bin, "--accept-tos", "connect"],
+    ]
+    for c in cmds:
+        subprocess.run(c, capture_output=True)
+        time.sleep(0.5)
+    for _ in range(15):
+        chk = subprocess.run(
+            ["curl", "-sf", "--socks5-hostname", "127.0.0.1:40000", "https://cloudflare.com/cdn-cgi/trace"],
+            capture_output=True, text=True
+        )
+        if "warp=on" in chk.stdout:
+            logging.info(f"Novo túnel WARP ativo: {[l for l in chk.stdout.splitlines() if l.startswith(('ip=', 'colo='))]}")
+            return True
+        time.sleep(1.0)
+    return False
+
+def download_video_resilient(url, work_dir):
+    dl_args = [
+        "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "--merge-output-format", "mp4",
+        "--write-thumbnail", "--convert-thumbnails", "jpg",
+        "--output", str(work_dir / "original_video.%(ext)s"),
+        url
+    ]
+    ip_modes = [["--force-ipv4"], ["--force-ipv6"]] if os.environ.get("YTDLP_PROXY") else [[]]
+    max_rounds = 4 if os.environ.get("YTDLP_PROXY") else 2
+    last_err = None
+    for rnd in range(max_rounds):
+        for ip_flag in ip_modes:
+            try:
+                run_cmd(get_ytdlp_cmd(use_cookies=True, clients="mweb,android_vr,ios,android,web") + ip_flag + dl_args)
+                if (work_dir / "original_video.mp4").exists():
+                    size_mb = (work_dir / "original_video.mp4").stat().st_size / (1024 * 1024)
+                    logging.info(f"[+] SUCESSO DOWNLOAD MP4 ({size_mb:.2f} MB) na rodada {rnd+1} ({ip_flag or 'default'})")
+                    return
+            except Exception as e:
+                last_err = e
+                logging.warning(f"Tentativa rodada {rnd+1} ({ip_flag}) falhou.")
+        if rnd + 1 < max_rounds:
+            rotate_warp_proxy()
+    raise last_err or RuntimeError("Todos os IPs/perfis de download falharam.")
+
 def process_video(video_id):
     logging.info(f"=== INICIANDO PROCESSAMENTO: {video_id} ===")
     work_dir = WORKSPACE_DIR / video_id
@@ -328,33 +382,9 @@ def process_video(video_id):
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
         
-        # 1. Download do vídeo e thumbnail (com fallback de perfis anti-datacenter)
+        # 1. Download do vídeo e thumbnail (resiliente com rotação WARP IPv4/IPv6)
         logging.info(f"Baixando mídia de {url}...")
-        dl_args = [
-            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-            "--merge-output-format", "mp4",
-            "--write-thumbnail", "--convert-thumbnails", "jpg",
-            "--output", str(work_dir / "original_video.%(ext)s"),
-            url
-        ]
-        profiles = [
-            (True, "mweb,android_vr,ios,android,web"),
-            (False, "android_vr,tv_embedded,ios,mweb"),
-            (False, "web_creator,tv,web_embedded"),
-        ]
-        dl_ok = False
-        last_err = None
-        for use_ck, cli_list in profiles:
-            try:
-                run_cmd(get_ytdlp_cmd(use_cookies=use_ck, clients=cli_list) + dl_args)
-                if (work_dir / "original_video.mp4").exists():
-                    dl_ok = True
-                    break
-            except Exception as e:
-                last_err = e
-                logging.warning(f"Perfil ({cli_list}, cookies={use_ck}) falhou, tentando próximo...")
-        if not dl_ok:
-            raise last_err or RuntimeError("Todos os perfis de download falharam.")
+        download_video_resilient(url, work_dir)
 
         orig_video = work_dir / "original_video.mp4"
         orig_thumb = work_dir / "original_video.jpg"
@@ -582,34 +612,9 @@ def test_cloud_download(video_id):
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
-        dl_args = [
-            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-            "--merge-output-format", "mp4",
-            "--write-thumbnail", "--convert-thumbnails", "jpg",
-            "--output", str(work_dir / "original_video.%(ext)s"),
-            url
-        ]
-        profiles = [
-            (True, "mweb,android_vr,ios,android,web"),
-            (False, "android_vr,tv_embedded,ios,mweb"),
-            (False, "web_creator,tv,web_embedded"),
-        ]
-        dl_ok = False
-        for use_ck, cli_list in profiles:
-            try:
-                run_cmd(get_ytdlp_cmd(use_cookies=use_ck, clients=cli_list) + dl_args)
-                if (work_dir / "original_video.mp4").exists():
-                    size_mb = (work_dir / "original_video.mp4").stat().st_size / (1024 * 1024)
-                    logging.info(f"[+] SUCESSO DOWNLOAD MP4 ({size_mb:.2f} MB) com perfil ({cli_list}, cookies={use_ck})")
-                    dl_ok = True
-                    break
-            except Exception as e:
-                logging.warning(f"Perfil ({cli_list}, cookies={use_ck}) falhou: {e}")
-        if not dl_ok:
-            raise RuntimeError("Falha no teste de download de mídia em nuvem!")
-
+        download_video_resilient(url, work_dir)
         transcript = fetch_transcript(video_id, work_dir)
-        logging.info(f"[+] SUCESSO TRANSCRIÇÃO EM NUVEM: {len(transcript)} blocos obtidos!")
+        logging.info(f"[+] SUCESSO TRANSCRIÇÃO EM NUVEM: {len(transcript)} blocos obtidos! Amostra: {transcript[0]['text'][:80]}")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
