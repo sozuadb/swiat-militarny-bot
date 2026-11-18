@@ -39,11 +39,31 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Install System Dependencies (FFmpeg & Fonts)
+      - name: Install System Dependencies (FFmpeg, Fonts & Cloudflare WARP)
         run: |
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ noble main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-open-sans
+          sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-open-sans cloudflare-warp
           sudo sh -c 'echo "63.188.89.133 api.mymemory.translated.net" >> /etc/hosts'
+
+      - name: Start Cloudflare WARP SOCKS5 Proxy (Exit Azure Datacenter ASN)
+        run: |
+          sudo systemctl start warp-svc
+          sleep 2
+          warp-cli --accept-tos registration new || sudo warp-cli --accept-tos registration new
+          warp-cli --accept-tos mode proxy || sudo warp-cli --accept-tos mode proxy
+          warp-cli --accept-tos proxy port 40000 || sudo warp-cli --accept-tos proxy port 40000
+          warp-cli --accept-tos connect || sudo warp-cli --accept-tos connect
+          for i in {1..20}; do
+            if curl -sf --socks5-hostname 127.0.0.1:40000 https://cloudflare.com/cdn-cgi/trace | grep -q "warp=on"; then
+              echo "Cloudflare WARP SOCKS5 Proxy online!"
+              echo "YTDLP_PROXY=socks5h://127.0.0.1:40000" >> "$GITHUB_ENV"
+              break
+            fi
+            sleep 1
+          done
+          curl -s --socks5-hostname 127.0.0.1:40000 https://cloudflare.com/cdn-cgi/trace | grep -E "ip=|warp=|colo=" || true
 
       - name: Install Python Dependencies
         run: |

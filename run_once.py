@@ -105,6 +105,9 @@ def get_ytdlp_cmd(use_cookies=True, clients="mweb,android_vr,ios,android,web"):
         cmd.extend(["--js-runtimes", f"deno:{deno_bin}"])
     elif node_bin:
         cmd.extend(["--js-runtimes", f"node:{node_bin}"])
+    ytdlp_proxy = os.environ.get("YTDLP_PROXY", "").strip()
+    if ytdlp_proxy:
+        cmd.extend(["--proxy", ytdlp_proxy])
     if use_cookies and has_valid_auth_cookies(COOKIES_FILE):
         # Copia para arquivo efêmero para evitar que yt-dlp sobrescreva/expire cookies.txt
         tmp_cookies = WORKSPACE_DIR / "runtime_cookies.txt"

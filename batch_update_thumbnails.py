@@ -17,10 +17,8 @@ BASE_DIR = Path(__file__).resolve().parent
 TEMP_DIR = BASE_DIR / "temp_thumbs"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-# 1 vídeo pendente de reset de cota do YouTube
-VIDEOS_PENDING = [
-    ("sTB7BYPaisU", "NTmsCRGCzY0", "Japonia chce broni jądrowej? Koniec powojennego tabu w Tokio"),
-]
+# Todas as thumbnails antigas já foram migradas (0 pendentes)
+VIDEOS_PENDING = []
 
 def update_pending():
     print(f"[*] Processando {len(VIDEOS_PENDING)} thumbnails pendentes...")
