@@ -10,3 +10,5 @@ pillow>=10.0.0
 bgutil-ytdlp-pot-provider>=2.0.2
 pysocks>=1.7.1
 faster-whisper>=1.1.0
+av<18
+
