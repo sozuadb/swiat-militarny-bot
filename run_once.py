@@ -624,7 +624,7 @@ def main():
         test_cloud_download(sys.argv[2])
         sys.exit(0)
     processed = load_processed_ids()
-    latest_ids = get_latest_channel_video_ids(limit=5)
+    latest_ids = get_latest_channel_video_ids(limit=10)
     logging.info(f"Últimos IDs detectados no canal: {latest_ids}")
     logging.info(f"Total já processados: {len(processed)}")
 
@@ -633,10 +633,19 @@ def main():
         logging.info("Nenhum vídeo inédito encontrado. Pipeline finalizado com sucesso.")
         sys.exit(0)
 
-    # Processa 1 vídeo por execução de workflow
-    target_vid = unprocessed[0]
-    logging.info(f"Processando próximo vídeo inédito da fila: {target_vid}")
-    process_video(target_vid)
+    logging.info(f"Fila de vídeos inéditos detectada ({len(unprocessed)}): {unprocessed}")
+    for idx, target_vid in enumerate(unprocessed, 1):
+        logging.info(f"=== [{idx}/{len(unprocessed)}] Processando vídeo inédito da fila: {target_vid} ===")
+        try:
+            process_video(target_vid)
+        except Exception as e:
+            err_msg = str(e)
+            if "quotaExceeded" in err_msg or "uploadLimitExceeded" in err_msg or "429" in err_msg:
+                logging.warning(f"Cota/limite de upload atingido em {target_vid}. Encerrando fila com segurança para preservar commits anteriores.")
+                break
+            logging.error(f"Falha ao processar {target_vid}: {e}", exc_info=True)
+            if idx == len(unprocessed) and idx == 1:
+                raise
     logging.info("Pipeline concluído com sucesso!")
 
 if __name__ == "__main__":
