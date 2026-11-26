@@ -123,7 +123,7 @@ def run_cmd(cmd, check=True):
     res = subprocess.run(cmd, shell=isinstance(cmd, str), capture_output=True, text=True)
     if check and res.returncode != 0:
         logging.error(f"Erro no comando:\nSTDERR: {res.stderr}\nSTDOUT: {res.stdout}")
-        raise RuntimeError(f"Comando falhou: {cmd_str}")
+        raise RuntimeError(f"Comando falhou: {cmd_str}\n{res.stderr[-500:]}")
     return res
 
 def load_processed_ids():
