@@ -52,7 +52,7 @@ def sync_git_push():
     if not gh_token or not (BASE_DIR / ".git").exists():
         return
     try:
-        repo_url = f"https://x-access-token:{gh_token}@github.com/leuduhdheyshbf/swiat-militarny-bot.git"
+        repo_url = f"https://x-access-token:{gh_token}@github.com/sozuadb/swiat-militarny-bot.git"
         subprocess.run(["git", "-C", str(BASE_DIR), "config", "user.name", "railway-bot"], check=False)
         subprocess.run(["git", "-C", str(BASE_DIR), "config", "user.email", "railway-bot@users.noreply.github.com"], check=False)
         subprocess.run(["git", "-C", str(BASE_DIR), "add", "processed_ids.json", "processed_shorts.json"], check=False)
