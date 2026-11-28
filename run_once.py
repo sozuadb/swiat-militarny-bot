@@ -285,40 +285,125 @@ def split_into_safe_chunks(text, max_chars=380):
         chunks.append(" ".join(cur_chunk))
     return chunks
 
-def translate_to_polish(text):
-    translator = MyMemoryTranslator(source="pt-BR", target="pl-PL", email="swiatmilitarny@gmail.com")
-    chunks = split_into_safe_chunks(text, max_chars=380)
+MYMEMORY_HOST = "api.mymemory.translated.net"
 
+
+def mymemory_get(params):
+    """Chamada HTTPS ao MyMemory com host fixo e IP validado (anti-SSRF).
+
+    O endereço é resolvido, faixas privadas/loopback/link-local são rejeitadas
+    e a conexão usa o IP validado com SNI do hostname real — sem rediretos e
+    sem segunda resolução, o que impede DNS rebinding.
+    """
+    import http.client
+    import ipaddress
+    import socket
+    import ssl
+    import urllib.parse
+
+    try:
+        infos = socket.getaddrinfo(MYMEMORY_HOST, 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise RuntimeError(f"Falha de resolução de {MYMEMORY_HOST}: {e}")
+
+    candidates = []
+    for family, _, _, _, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
+                or ip.is_reserved or ip.is_unspecified):
+            continue
+        candidates.append((family, str(ip)))
+    if not candidates:
+        raise RuntimeError(f"Nenhum IP público resolvido para {MYMEMORY_HOST}")
+
+    family, ip = candidates[0]
+    path = "/get?" + urllib.parse.urlencode(params)
+    host_for_conn = f"[{ip}]" if family == socket.AF_INET6 else ip
+    conn = http.client.HTTPSConnection(host_for_conn, 443, timeout=45)
+    # Valida o certificado contra o hostname real e fixa o IP já inspecionado.
+    conn.sock = ssl.create_default_context().wrap_socket(
+        socket.create_connection((host_for_conn, 443), timeout=45),
+        server_hostname=MYMEMORY_HOST,
+    )
+    try:
+        conn.request("GET", path, headers={
+            "Host": MYMEMORY_HOST,
+            "User-Agent": "swiat-militarny-pipeline/1.0",
+        })
+        response = conn.getresponse()
+        if response.status != 200:
+            raise RuntimeError(f"MyMemory HTTP {response.status}")
+        return json.loads(response.read().decode("utf-8"))
+    finally:
+        conn.close()
+
+
+def translate_via_mymemory(text, email="swiatmilitarny@gmail.com"):
+    data = mymemory_get({
+        "q": text,
+        "langpair": "pt-BR|pl-PL",
+        "de": email,
+    })
+    return data["responseData"]["translatedText"].strip()
+
+
+def translate_to_polish(text):
+    """Traduz para polonês em lote (1 requisição por grupo de blocos).
+
+    O endpoint aceita segmentos separados por '|' e devolve na mesma ordem.
+    Isso evita o rate limit de 5 req/s que fazia o fallback manter português
+    e gerar vídeos errados no canal polonês.
+    """
+    import urllib.parse
+
+    chunks = split_into_safe_chunks(text, max_chars=380)
     logging.info(f"Traduzindo {len(chunks)} blocos consolidados para polonês...")
     translated = []
-    for i, c in enumerate(chunks):
-        chunk_success = False
-        for attempt in range(4):
-            try:
-                res = translator.translate(c)
-                if res and res != c:
-                    translated.append(res)
-                    chunk_success = True
-                    break
-            except Exception as e:
-                logging.warning(f"Tentativa {attempt+1} falhou para bloco {i+1} ({len(c)} chars): {e}")
-                time.sleep(1.0 * (attempt + 1))
-        if not chunk_success:
-            # Fallback: divide o bloco ao meio
-            words = c.split()
-            mid = len(words) // 2
-            sub_c1, sub_c2 = " ".join(words[:mid]), " ".join(words[mid:])
-            try:
-                res1 = translator.translate(sub_c1) if sub_c1 else ""
-                res2 = translator.translate(sub_c2) if sub_c2 else ""
-                translated.append(f"{res1} {res2}".strip())
-                chunk_success = True
-            except Exception as e2:
-                logging.error(f"Falha definitiva ao traduzir bloco {i+1}: {e2}. Mantendo original.")
-                translated.append(c)
-        time.sleep(0.4)
 
-    return " ".join(translated)
+    def translate_batch(batch):
+        data = mymemory_get({
+            "q": "|".join(batch),
+            "langpair": "pt-BR|pl-PL",
+            "de": "swiatmilitarny@gmail.com",
+        })
+        parts = data["responseData"]["translatedText"].split("|")
+        if len(parts) != len(batch):
+            raise RuntimeError(f"MyMemory devolveu {len(parts)} partes para {len(batch)} blocos")
+        return [p.strip() for p in parts]
+
+    # Grupos de até 5 blocos (~1.900 chars) por requisição.
+    batch_size = 5
+    for start in range(0, len(chunks), batch_size):
+        batch = chunks[start:start + batch_size]
+        group = None
+        for attempt in range(5):
+            try:
+                group = translate_batch(batch)
+                break
+            except Exception as e:
+                logging.warning(f"Tentativa {attempt+1} falhou no grupo {start//batch_size+1}: {e}")
+                time.sleep(2.0 * (attempt + 1))
+        if group is None:
+            # Nunca manter português: tenta bloco a bloco com e-mail alternativo.
+            logging.error("Lote falhou; tentando blocos individuais para evitar português no canal polonês.")
+            group = []
+            for c in batch:
+                piece = ""
+                for attempt in range(4):
+                    try:
+                        piece = translate_via_mymemory(c, "swiatmilitarny-backup@gmail.com")
+                        break
+                    except Exception as e:
+                        logging.warning(f"Bloco individual falhou ({attempt+1}/4): {e}")
+                        time.sleep(1.5 * (attempt + 1))
+                if not piece or piece == c:
+                    logging.error(f"Bloco sem tradução confiável descartado: {c[:80]}")
+                group.append(piece)
+        translated.extend(group)
+        time.sleep(0.6)
+
+    # Remove blocos vazios em vez de injetar português no áudio polonês.
+    return " ".join(p for p in translated if p)
 
 def rotate_warp_proxy():
     """Rotaciona identidade do Cloudflare WARP caso um IP específico de saída seja bloqueado."""
